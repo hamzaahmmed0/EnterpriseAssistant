@@ -1,0 +1,30 @@
+[project]
+name = "enterprise-assistant-backend"
+version = "0.1.0"
+description = "Access-controlled document Q&A and contract compliance review -- backend"
+requires-python = ">=3.11"
+
+# Dependencies are listed in requirements.txt / requirements-dev.txt at scaffold time.
+# TODO: decide whether this project uses pip + requirements.txt or uv/PEP 621 [project.dependencies]
+#       as the single source of truth, then delete the loser. Do not maintain both.
+dependencies = []
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# TODO: confirm rule selection after the first real module lands.
+select = ["E", "F", "I", "UP", "B", "ANN", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

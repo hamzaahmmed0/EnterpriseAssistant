@@ -1,0 +1,21 @@
+[
+  {
+    "contract_id": "ctr-000",
+    "file": "data/contracts/PLACEHOLDER.docx",
+    "reviewed_as": "PLACEHOLDER_user_id",
+    "expected_clause_count": 1,
+    "segmentation_path": "structural",
+    "clauses": [
+      {
+        "clause_id": "ctr-000-c1",
+        "heading": "PLACEHOLDER - gold clause heading, verbatim",
+        "expected_verdict": "Compliant",
+        "expected_policy_source": {
+          "document_id": "PLACEHOLDER_policy_document_id",
+          "section": "PLACEHOLDER"
+        },
+        "notes": "PLACEHOLDER - the rationale a grader can check"
+      }
+    ]
+  }
+]

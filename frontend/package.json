@@ -1,0 +1,26 @@
+{
+  "name": "enterprise-assistant-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "comment": "TODO: pin every version below once installed, and delete this comment key.",
+  "dependencies": {
+    "next": "TODO",
+    "react": "TODO",
+    "react-dom": "TODO"
+  },
+  "devDependencies": {
+    "typescript": "TODO",
+    "@types/node": "TODO",
+    "@types/react": "TODO",
+    "@types/react-dom": "TODO",
+    "eslint": "TODO",
+    "eslint-config-next": "TODO"
+  }
+}

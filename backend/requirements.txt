@@ -1,0 +1,37 @@
+# Runtime dependencies. Versions are deliberately unpinned at scaffold time.
+# TODO: pin every line to an exact version once the stack is first installed, and
+# TODO: record the resolved versions in docs/DECISIONS.md (results are not reproducible otherwise).
+
+# --- web layer ---
+fastapi              # TODO: pin
+uvicorn[standard]    # TODO: pin
+python-multipart     # TODO: pin  -- contract file uploads
+pydantic             # TODO: pin
+pydantic-settings    # TODO: pin  -- .env -> Settings
+
+# --- agent layer ---
+langchain            # TODO: pin
+langgraph            # TODO: pin
+
+# --- llm + embeddings ---
+ollama               # TODO: pin  -- or langchain-ollama; decide in ADR-005
+# TODO: add the embedding runtime once ADR-005 is decided
+#       (sentence-transformers for BGE-small, or the Ollama route for nomic-embed-text)
+
+# --- vector store ---
+qdrant-client        # TODO: pin
+
+# --- relational ---
+sqlalchemy           # TODO: pin
+psycopg[binary]      # TODO: pin
+# TODO: add alembic only if ADR-008 resolves to migrations
+
+# --- document parsing ---
+pypdf                # TODO: pin  -- PDF text extraction
+python-docx          # TODO: pin  -- DOCX text extraction
+
+# --- mcp ---
+mcp                  # TODO: pin  -- official Python MCP SDK
+
+# --- auth ---
+# TODO: add the token library once ADR-006 resolves (pyjwt if JWT, nothing if opaque tokens)

@@ -1,0 +1,45 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# --- Secrets & local config ---
+.env
+.env.local
+.env.*.local
+*.pem
+
+# --- Data (synthetic corpus, uploads, model weights) ---
+data/**
+!data/**/.gitkeep
+uploads/
+*.gguf
+*.safetensors
+
+# --- Local service state ---
+qdrant_storage/
+pgdata/
+*.db
+*.sqlite3
+
+# --- Eval outputs (results are committed deliberately, not by accident) ---
+eval/results/*
+!eval/results/.gitkeep
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

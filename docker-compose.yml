@@ -1,0 +1,66 @@
+# Local + single-VM deployment topology.
+# Services and ports are declared; build/runtime details are deliberately left as TODOs
+# until Sprint 4 (deployment). Do not fill these in earlier -- see docs/PLAN.md.
+
+version: "3.9"
+
+services:
+  qdrant:
+    image: qdrant/qdrant   # TODO: pin an exact tag once the embedding dim is fixed (ADR-005)
+    ports:
+      - "6333:6333"   # HTTP / dashboard
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    # TODO: healthcheck on GET /readyz so backend waits for a ready collection host
+
+  postgres:
+    image: postgres   # TODO: pin tag (16.x)
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # TODO: healthcheck with pg_isready
+
+  ollama:
+    image: ollama/ollama   # TODO: pin tag
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    # TODO: decide whether Ollama runs in-compose or on the host GPU (ADR-005 open question).
+    # TODO: model pull is a manual step until decided -- document it in README setup.
+
+  backend:
+    # TODO: build context ./backend, dockerfile backend/Dockerfile, target runtime stage
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - qdrant
+      - postgres
+      - ollama
+    # TODO: command (uvicorn app.main:app), volume mount for data/ in dev, restart policy
+
+  frontend:
+    # TODO: build context ./frontend, dockerfile frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    # TODO: decide dev (next dev, bind mount) vs prod (next build + next start) profile
+
+  # The MCP server runs as a stdio process for local clients (no service here).
+  # TODO: add an `mcp` service only if MCP_TRANSPORT=http is chosen (ADR-002 note).
+
+volumes:
+  qdrant_storage:
+  pgdata:
+  ollama_models:

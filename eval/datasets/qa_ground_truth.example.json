@@ -1,0 +1,24 @@
+[
+  {
+    "id": "qa-000",
+    "question": "PLACEHOLDER - replace with a real question in Sprint 1 task 1.2",
+    "question_type": "direct",
+    "asked_as": "PLACEHOLDER_user_id",
+    "expected_answerable": true,
+    "expected_sources": [
+      { "document_id": "PLACEHOLDER_document_id", "page": 1 }
+    ],
+    "expected_answer_summary": "PLACEHOLDER - short reference answer for manual grading",
+    "notes": "PLACEHOLDER - why this item is in the set and what it stresses"
+  },
+  {
+    "id": "qa-001",
+    "question": "PLACEHOLDER - a negative item, answerable from no document in the corpus",
+    "question_type": "negative",
+    "asked_as": "PLACEHOLDER_user_id",
+    "expected_answerable": false,
+    "expected_sources": [],
+    "expected_answer_summary": "Correct output is the insufficient-evidence response.",
+    "notes": "PLACEHOLDER - negatives carry no gold sources and are scored separately"
+  }
+]

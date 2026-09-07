@@ -1,0 +1,7 @@
+-r requirements.txt
+
+pytest               # TODO: pin
+pytest-asyncio       # TODO: pin
+httpx                # TODO: pin  -- FastAPI TestClient transport
+ruff                 # TODO: pin
+black                # TODO: pin
