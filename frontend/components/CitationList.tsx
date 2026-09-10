@@ -1,22 +1,38 @@
 /**
  * Source citations under an answer.
  *
- * Citation is required, not decorative: an answer with no citations is a failure state and must
- * be rendered as one rather than silently showing nothing.
+ * Citation is required, not decorative: an answer that claims to be grounded but cites nothing is
+ * a failure state and is rendered as one rather than as an empty space.
  */
 
 import type { Citation } from "@/lib/types";
 
-export interface CitationListProps {
+interface CitationListProps {
   citations: Citation[];
+  /** Whether the answer claimed to be grounded. An uncited grounded answer is a defect. */
+  sufficient: boolean;
 }
 
-export function CitationList({ citations }: CitationListProps) {
-  throw new Error("Not implemented");
-}
+export function CitationList({ citations, sufficient }: CitationListProps) {
+  if (citations.length === 0) {
+    if (!sufficient) return null; // the fallback has nothing to cite, correctly
+    return (
+      <p className="citations none">
+        This answer carries no citations, which should not happen. Treat it as unverified.
+      </p>
+    );
+  }
 
-// TODO:
-//  1. Render document title and page per citation.
-//  2. Render an explicit "no sources" state when the list is empty on a sufficient answer.
-//  3. Decide whether a citation links to the source document, and whether that link is itself
-//     access-checked -- if it is not, it is a second retrieval path without a filter.
+  return (
+    <div className="citations">
+      <strong>Sources</strong>
+      <ol>
+        {citations.map((citation) => (
+          <li key={citation.chunkId}>
+            {citation.documentTitle} — page {citation.page}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}

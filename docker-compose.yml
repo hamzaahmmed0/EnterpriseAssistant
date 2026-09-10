@@ -1,64 +1,124 @@
 # Local + single-VM deployment topology.
-# Services and ports are declared; build/runtime details are deliberately left as TODOs
-# until Sprint 4 (deployment). Do not fill these in earlier -- see docs/PLAN.md.
-
-version: "3.9"
+#
+# Bring up infrastructure first, ingest, then the app:
+#   docker compose up -d qdrant postgres ollama
+#   docker compose run --rm backend python -m app.ingestion.pipeline --manifest /data/corpus/manifest.json
+#   docker compose up -d backend frontend
 
 services:
   qdrant:
-    image: qdrant/qdrant   # TODO: pin an exact tag once the embedding dim is fixed (ADR-005)
+    image: qdrant/qdrant:v1.12.4
     ports:
-      - "6333:6333"   # HTTP / dashboard
-      - "6334:6334"   # gRPC
+      - "6333:6333" # HTTP / dashboard
+      - "6334:6334" # gRPC
     volumes:
       - qdrant_storage:/qdrant/storage
-    # TODO: healthcheck on GET /readyz so backend waits for a ready collection host
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   postgres:
-    image: postgres   # TODO: pin tag (16.x)
+    image: postgres:16-alpine
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-eka}
+      POSTGRES_USER: ${POSTGRES_USER:-eka}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eka}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # TODO: healthcheck with pg_isready
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eka} -d ${POSTGRES_DB:-eka}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
+  # Serves both the LLM and the embedding model (ADR-005), so there is one model runtime to run.
+  # On a GPU host, comment this out and point OLLAMA_BASE_URL at the host install instead --
+  # in-container Ollama is CPU-only here, which is the difference between seconds and minutes
+  # per query.
   ollama:
-    image: ollama/ollama   # TODO: pin tag
+    image: ollama/ollama:0.5.7
     ports:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-    # TODO: decide whether Ollama runs in-compose or on the host GPU (ADR-005 open question).
-    # TODO: model pull is a manual step until decided -- document it in README setup.
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  # Pulls the two models once, then exits. Without this, the first request downloads ~5 GB while
+  # a user waits, and the eval latency numbers for that run are meaningless.
+  ollama-pull:
+    image: ollama/ollama:0.5.7
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama pull ${LLM_MODEL:-qwen2.5:7b-instruct} &&
+       ollama pull ${EMBEDDING_MODEL:-nomic-embed-text}"
+    restart: "no"
 
   backend:
-    # TODO: build context ./backend, dockerfile backend/Dockerfile, target runtime stage
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
     ports:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Override the localhost defaults in .env with in-network service names.
+      QDRANT_HOST: qdrant
+      OLLAMA_BASE_URL: http://ollama:11434
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-eka}:${POSTGRES_PASSWORD:-eka}@postgres:5432/${POSTGRES_DB:-eka}
+      DEMO_USERS_PATH: /app/demo_users.json
+      INGEST_SOURCE_DIR: /data/corpus
+      INGEST_MANIFEST_PATH: /data/corpus/manifest.json
+      CONTRACT_UPLOAD_DIR: /data/contracts
+      JUDGE_CACHE_PATH: /data/.judge_cache.json
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+    volumes:
+      # The corpus stays on the host: it is never committed and never baked into an image.
+      - ./data:/data
     depends_on:
-      - qdrant
-      - postgres
-      - ollama
-    # TODO: command (uvicorn app.main:app), volume mount for data/ in dev, restart policy
+      qdrant:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
 
   frontend:
-    # TODO: build context ./frontend, dockerfile frontend/Dockerfile
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runtime
     ports:
       - "3000:3000"
-    env_file:
-      - .env
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Enterprise Knowledge Assistant}
+      AUTH_TOKEN_TTL_MINUTES: ${AUTH_TOKEN_TTL_MINUTES:-480}
     depends_on:
       - backend
-    # TODO: decide dev (next dev, bind mount) vs prod (next build + next start) profile
+    restart: unless-stopped
 
-  # The MCP server runs as a stdio process for local clients (no service here).
-  # TODO: add an `mcp` service only if MCP_TRANSPORT=http is chosen (ADR-002 note).
+  # The MCP server runs as a stdio process launched by the client, so it is not a service here.
+  # For MCP_TRANSPORT=http, run:
+  #   docker compose run --rm -p 8001:8001 -e MCP_TRANSPORT=http backend python -m app.mcp.server
 
 volumes:
   qdrant_storage:

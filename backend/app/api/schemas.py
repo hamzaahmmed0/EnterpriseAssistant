@@ -1,17 +1,24 @@
 """Pydantic request and response models for the REST API.
 
-The citation and verdict shapes defined here are shared with the persistence layer and the MCP
-tool results, so a single definition governs all three.
+The citation and verdict shapes here are the same ones persisted to PostgreSQL and returned by
+the MCP tools, so a single definition governs all three (ADR-012). The contract-review
+disclaimer is a required field with no default: a response cannot be constructed without it.
 """
 
-from pydantic import BaseModel
+from __future__ import annotations
+
+from pydantic import BaseModel, Field, field_validator
+
+from app.contracts.reviewer import Verdict
+
+MAX_QUESTION_CHARS = 2000
 
 
 class LoginRequest(BaseModel):
     """POST /auth/login body."""
 
-    user_id: str
-    password: str
+    user_id: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=200)
 
 
 class LoginResponse(BaseModel):
@@ -37,12 +44,25 @@ class CitationOut(BaseModel):
 class AskRequest(BaseModel):
     """POST /ask body."""
 
-    question: str
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
     conversation_id: str | None = None
+
+    @field_validator("question")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        """Reject whitespace-only questions before they reach the engine."""
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("question must not be blank")
+        return cleaned
 
 
 class AskResponse(BaseModel):
-    """POST /ask reply, including the audit fields the eval harness reads."""
+    """POST /ask reply, including the audit fields the eval harness reads.
+
+    ``sufficient=false`` is a normal, successful response carrying the insufficient-evidence
+    answer -- it is returned with HTTP 200, not an error status.
+    """
 
     answer: str
     citations: list[CitationOut]
@@ -69,33 +89,44 @@ class ClauseVerdictOut(BaseModel):
     clause_index: int
     heading: str
     clause_text: str
-    verdict: str
+    verdict: Verdict
     cited_policy_doc: str | None
     cited_policy_section: str | None
     explanation: str
 
 
 class CheckContractResponse(BaseModel):
-    """POST /check-contract reply. The disclaimer field is mandatory, not decorative."""
+    """POST /check-contract reply. The disclaimer is mandatory, not decorative (ADR-010)."""
 
     contract_review_id: str
     contract_name: str
     clauses: list[ClauseVerdictOut]
-    disclaimer: str
+    segmentation_path: str
+    disclaimer: str = Field(min_length=1)
     latency_seconds: float
+
+
+class MessageOut(BaseModel):
+    """One persisted conversation turn."""
+
+    role: str
+    content: str
+    citations: list[CitationOut]
+    sufficient: bool | None = None
+    evidence_score: float | None = None
 
 
 class ConversationResponse(BaseModel):
     """GET /conversation/{id} reply."""
 
     conversation_id: str
-    messages: list[dict]
+    messages: list[MessageOut]
 
 
-# TODO:
-#  1. Add field validators: non-empty question, question length cap, conversation_id ownership
-#     checked at the route (a caller must not read another user conversation).
-#  2. Constrain ClauseVerdictOut.verdict to the Verdict enum rather than a bare string.
-#  3. Make disclaimer non-optional with no default, so a response cannot be built without it.
-#  4. Derive CitationOut from the same definition used by messages.citations in models.py.
-#  5. Add example payloads for the OpenAPI docs once the shapes are settled.
+class HealthResponse(BaseModel):
+    """GET /health reply."""
+
+    status: str
+    postgres: dict
+    qdrant: dict
+    ollama: dict

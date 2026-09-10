@@ -1,37 +1,35 @@
-# Runtime dependencies. Versions are deliberately unpinned at scaffold time.
-# TODO: pin every line to an exact version once the stack is first installed, and
-# TODO: record the resolved versions in docs/DECISIONS.md (results are not reproducible otherwise).
+# Runtime dependencies.
+# Lower bounds are set to versions whose APIs this code actually uses. Pin exact versions after
+# the first successful install (`pip freeze`) and record them in docs/DECISIONS.md -- results are
+# not reproducible otherwise.
 
 # --- web layer ---
-fastapi              # TODO: pin
-uvicorn[standard]    # TODO: pin
-python-multipart     # TODO: pin  -- contract file uploads
-pydantic             # TODO: pin
-pydantic-settings    # TODO: pin  -- .env -> Settings
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9      # contract file uploads
+pydantic>=2.6
+pydantic-settings>=2.2
 
 # --- agent layer ---
-langchain            # TODO: pin
-langgraph            # TODO: pin
+langgraph>=0.2               # the adaptive loop; adaptive.py falls back to a plain loop without it
+langchain-core>=0.3
 
-# --- llm + embeddings ---
-ollama               # TODO: pin  -- or langchain-ollama; decide in ADR-005
-# TODO: add the embedding runtime once ADR-005 is decided
-#       (sentence-transformers for BGE-small, or the Ollama route for nomic-embed-text)
+# --- llm + embeddings (ADR-005: both served by Ollama over HTTP) ---
+httpx>=0.27
+
+# --- tokenizer used only to measure chunk size (ADR-003) ---
+tiktoken>=0.6
 
 # --- vector store ---
-qdrant-client        # TODO: pin
+qdrant-client>=1.9
 
-# --- relational ---
-sqlalchemy           # TODO: pin
-psycopg[binary]      # TODO: pin
-# TODO: add alembic only if ADR-008 resolves to migrations
+# --- relational (ADR-008: create_all, no alembic) ---
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
 
 # --- document parsing ---
-pypdf                # TODO: pin  -- PDF text extraction
-python-docx          # TODO: pin  -- DOCX text extraction
+pypdf>=4.1                   # PDF text extraction
+python-docx>=1.1             # DOCX text extraction
 
 # --- mcp ---
-mcp                  # TODO: pin  -- official Python MCP SDK
-
-# --- auth ---
-# TODO: add the token library once ADR-006 resolves (pyjwt if JWT, nothing if opaque tokens)
+mcp>=2.0                     # official Python MCP SDK (MCPServer; was FastMCP before 2.x)

@@ -1,42 +1,112 @@
-"""Embedding model wrapper.
+"""Embedding model wrapper (ADR-005: nomic-embed-text served by Ollama).
 
 One place decides what the vectors mean. Changing the model changes EMBEDDING_DIM, the Qdrant
 collection, and every number in docs/EVALUATION.md, so the model name is config and is recorded
-in every results file (ADR-005).
+in every results file.
+
+nomic-embed-text is asymmetric: documents and queries take different task prefixes. Using the
+document prefix for a query silently degrades retrieval without raising anything, which is why
+embed_texts and embed_query are separate functions rather than one with a flag.
 """
+
+from __future__ import annotations
+
+import httpx
+
+from app.config import get_settings
+
+DOCUMENT_PREFIX = "search_document: "
+QUERY_PREFIX = "search_query: "
+
+
+class EmbeddingError(Exception):
+    """Raised when the embedding service fails or returns an unusable response."""
+
+
+def _post_embed(inputs: list[str]) -> list[list[float]]:
+    """Call Ollama's embedding endpoint, tolerating both API shapes it has shipped."""
+    settings = get_settings()
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/embed"
+    try:
+        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
+            response = client.post(url, json={"model": settings.embedding_model, "input": inputs})
+            if response.status_code == 404:
+                # Older Ollama: one prompt per request against /api/embeddings.
+                return [_post_embed_legacy(client, text) for text in inputs]
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPError as exc:
+        raise EmbeddingError(f"embedding request failed: {exc}") from exc
+
+    vectors = payload.get("embeddings")
+    if vectors is None and "embedding" in payload:
+        vectors = [payload["embedding"]]
+    if not vectors or len(vectors) != len(inputs):
+        raise EmbeddingError(
+            f"embedding service returned {len(vectors or [])} vectors for {len(inputs)} inputs"
+        )
+    return [[float(value) for value in vector] for vector in vectors]
+
+
+def _post_embed_legacy(client: httpx.Client, text: str) -> list[float]:
+    """Single-input fallback for Ollama versions without /api/embed."""
+    settings = get_settings()
+    url = f"{settings.ollama_base_url.rstrip('/')}/api/embeddings"
+    response = client.post(url, json={"model": settings.embedding_model, "prompt": text})
+    response.raise_for_status()
+    vector = response.json().get("embedding")
+    if not vector:
+        raise EmbeddingError("embedding service returned an empty vector")
+    return [float(value) for value in vector]
+
+
+def _check_dimension(vectors: list[list[float]]) -> list[list[float]]:
+    """Fail loudly on a dimension mismatch; a silent one corrupts every retrieval result."""
+    expected = get_settings().embedding_dim
+    for vector in vectors:
+        if len(vector) != expected:
+            raise EmbeddingError(
+                f"embedding dimension mismatch: model returned {len(vector)}, "
+                f"EMBEDDING_DIM is {expected}. Fix .env or re-create the collection."
+            )
+    return vectors
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Embed a batch of texts.
+    """Embed a batch of document chunks.
 
     Args:
-        texts: Chunk or query texts.
+        texts: Chunk texts. Each is sent with the document task prefix.
 
     Returns:
         One vector per input, in input order, each of length settings.embedding_dim.
     """
-    raise NotImplementedError
+    if not texts:
+        return []
+
+    batch_size = max(1, get_settings().embedding_batch_size)
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), batch_size):
+        batch = [DOCUMENT_PREFIX + text for text in texts[start : start + batch_size]]
+        vectors.extend(_post_embed(batch))
+    return _check_dimension(vectors)
 
 
 def embed_query(text: str) -> list[float]:
-    """Embed a single query.
+    """Embed a single query, with the query task prefix.
 
-    Kept separate from embed_texts because some models require an asymmetric query prefix;
-    using the document encoder for queries silently degrades retrieval.
+    Kept separate from embed_texts because nomic-embed-text is asymmetric; using the document
+    encoder for queries degrades retrieval silently.
     """
-    raise NotImplementedError
+    if not text or not text.strip():
+        raise EmbeddingError("refusing to embed an empty query")
+    return _check_dimension(_post_embed([QUERY_PREFIX + text]))[0]
 
 
 def embedding_dimension() -> int:
-    """Return the vector size of the configured embedding model."""
-    raise NotImplementedError
+    """Return the vector size the configured model actually produces.
 
-
-# TODO:
-#  1. Resolve ADR-005 open question 1 (BGE-small vs. nomic-embed-text) before implementing.
-#  2. Implement embed_texts() with batching driven by settings.embedding_batch_size.
-#  3. Implement embed_query(), applying the model query prefix if the chosen model needs one
-#     (BGE does), and note in the docstring which convention is in force.
-#  4. Implement embedding_dimension() and assert it equals settings.embedding_dim at startup.
-#  5. Cache the loaded model at module level; loading per call will dominate ingest time.
-#  6. Record the resolved model name and revision in the eval provenance block.
+    Used at startup to assert the live Qdrant collection agrees with EMBEDDING_DIM.
+    """
+    probe = _post_embed([QUERY_PREFIX + "dimension probe"])
+    return len(probe[0])

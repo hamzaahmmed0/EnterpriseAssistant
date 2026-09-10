@@ -9,18 +9,19 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
-  "comment": "TODO: pin every version below once installed, and delete this comment key.",
   "dependencies": {
-    "next": "TODO",
-    "react": "TODO",
-    "react-dom": "TODO"
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
-    "typescript": "TODO",
-    "@types/node": "TODO",
-    "@types/react": "TODO",
-    "@types/react-dom": "TODO",
-    "eslint": "TODO",
-    "eslint-config-next": "TODO"
+    "@eslint/eslintrc": "^3.3.7",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^15.1.0",
+    "typescript": "^5.7.0"
   }
 }

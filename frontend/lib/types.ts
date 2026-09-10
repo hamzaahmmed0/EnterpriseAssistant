@@ -1,8 +1,12 @@
 /**
  * Shared TypeScript types mirroring the backend API schemas.
  *
- * These must stay in lockstep with backend/app/api/schemas.py. If they drift, the UI will
- * silently render stale fields -- including the legal disclaimer, which is not optional.
+ * Decision (the open question in the original stub): the API speaks snake_case, and mapping to
+ * camelCase happens in exactly one place -- `lib/api.ts`. Components never see wire shapes, and
+ * there is one file to fix when a field is renamed. A per-endpoint mix is how a required field
+ * like the legal disclaimer goes missing on one screen and not another.
+ *
+ * These must stay in lockstep with backend/app/api/schemas.py.
  */
 
 export interface Identity {
@@ -20,9 +24,10 @@ export interface Citation {
   chunkId: string;
 }
 
-export interface AskResponse {
+export interface AskResult {
   answer: string;
   citations: Citation[];
+  /** False means the honest fallback was returned. It is a normal result, not an error. */
   sufficient: boolean;
   evidenceScore: number;
   attempts: number;
@@ -50,17 +55,26 @@ export interface ClauseVerdict {
   explanation: string;
 }
 
-export interface ContractReviewResponse {
+export interface ContractReviewResult {
   contractReviewId: string;
   contractName: string;
   clauses: ClauseVerdict[];
+  segmentationPath: string;
   /** Decision-support disclaimer. Required by ADR-010; never optional, never rendered away. */
   disclaimer: string;
   latencySeconds: number;
 }
 
-// TODO:
-//  1. Decide whether the API emits snake_case and the client maps it, or the API emits camelCase.
-//     Pick one and apply it everywhere; a per-endpoint mix is how the disclaimer goes missing.
-//  2. Generate these from the backend OpenAPI schema once the routes are implemented, rather than
-//     maintaining two hand-written copies.
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+  result?: AskResult;
+}
+
+/** Verdict presentation. Colour is paired with a label so status never depends on colour alone. */
+export const VERDICT_STYLES: Record<Verdict, { label: string; className: string }> = {
+  Compliant: { label: "Compliant", className: "verdict-compliant" },
+  Deviates: { label: "Deviates", className: "verdict-deviates" },
+  Missing: { label: "Missing", className: "verdict-missing" },
+  "Needs Legal Review": { label: "Needs Legal Review", className: "verdict-review" },
+};

@@ -1,75 +1,224 @@
 """The bounded adaptive retrieval loop (LangGraph).
 
-retrieve -> score -> (reformulate -> retry, hard-capped) -> generate | insufficient evidence.
+retrieve -> judge -> (reformulate -> retry, hard-capped) -> generate | insufficient evidence.
 
-Two invariants: the loop always terminates within settings.adaptive_max_attempts, and the
-"insufficient evidence" exit is a first-class, tested output rather than an error path (ADR-004).
+Two invariants, both tested:
+
+1. The loop always terminates within ``settings.adaptive_max_attempts``. The cap is checked in
+   ``route_after_score`` and nowhere else.
+2. The "insufficient evidence" exit is a first-class output, not an error path (ADR-004).
+
+The access filter is re-applied on every attempt: a retry widens the *query*, never the caller's
+visibility.
 """
 
-from typing import Any, TypedDict
+from __future__ import annotations
+
+import time
+from typing import Any, Literal, TypedDict
 
 from app.auth import Identity
-from app.retrieval.engine import RetrievalResult
+from app.config import get_settings
+from app.generation import prompts
+from app.generation.llm import LLMError, complete
+from app.observability import log_retrieval_attempt
+from app.retrieval.engine import RetrievalEngine, RetrievalResult
+from app.retrieval.scoring import is_sufficient, judge_evidence
+from app.retrieval.vector_store import RetrievedChunk
+
+Decision = Literal["generate", "retry", "insufficient_evidence"]
 
 
-class AdaptiveState(TypedDict):
+class AdaptiveState(TypedDict, total=False):
     """State carried between nodes of the adaptive graph."""
 
     original_query: str
     current_query: str
     identity: Identity
+    collection: str
+    top_k: int | None
     attempt: int
-    chunks: list[Any]
+    chunks: list[RetrievedChunk]
+    applied_filter: dict[str, Any]
     evidence_score: float
-    decision: str
+    missing: str
+    decision: Decision
+    queries_tried: list[str]
+    started: float
+
+
+# --------------------------------------------------------------------------- nodes
 
 
 def node_retrieve(state: AdaptiveState) -> AdaptiveState:
-    """Run one filtered retrieval for the current query."""
-    raise NotImplementedError
+    """Run one filtered retrieval for the current query.
+
+    Delegates to RetrievalEngine.retrieve_fixed with judging disabled: the loop scores in
+    node_score, and the engine must not be asked to pay for the judge twice.
+    """
+    engine = RetrievalEngine(state["collection"])
+    attempt_started = time.perf_counter()
+
+    result = engine.retrieve_fixed(
+        state["current_query"],
+        state["identity"],
+        state.get("top_k"),
+        judge=False,
+    )
+
+    queries = list(state.get("queries_tried", []))
+    if state["current_query"] not in queries:
+        queries.append(state["current_query"])
+
+    return {
+        **state,
+        "attempt": state.get("attempt", 0) + 1,
+        "chunks": result.chunks,
+        "applied_filter": result.applied_filter,
+        "queries_tried": queries,
+        "started": attempt_started,
+    }
 
 
 def node_score(state: AdaptiveState) -> AdaptiveState:
-    """Score the retrieved evidence and record the attempt."""
-    raise NotImplementedError
+    """Judge the retrieved evidence and record the attempt."""
+    settings = get_settings()
+    judgement = judge_evidence(state["original_query"], state.get("chunks", []))
+    sufficient = is_sufficient(judgement.score, settings.evidence_threshold)
+
+    at_cap = state["attempt"] >= settings.adaptive_max_attempts
+    decision: Decision = (
+        "generate" if sufficient else ("insufficient_evidence" if at_cap else "retry")
+    )
+
+    log_retrieval_attempt(
+        attempt=state["attempt"],
+        query_chars=len(state["current_query"]),
+        evidence_score=judgement.score,
+        threshold=settings.evidence_threshold,
+        decision=decision,
+        chunk_count=len(state.get("chunks", [])),
+        latency_seconds=time.perf_counter() - state.get("started", time.perf_counter()),
+    )
+
+    return {
+        **state,
+        "evidence_score": judgement.score,
+        "missing": judgement.missing,
+        "decision": decision,
+    }
 
 
 def node_reformulate(state: AdaptiveState) -> AdaptiveState:
-    """Produce a new query for the next attempt."""
-    raise NotImplementedError
+    """Produce a new query for the next attempt, targeting what the judge said was missing.
 
-
-def route_after_score(state: AdaptiveState) -> str:
-    """Choose the next node: "generate", "reformulate", or "insufficient_evidence".
-
-    Returns "insufficient_evidence" once attempt reaches settings.adaptive_max_attempts,
-    regardless of score. The cap is checked here and nowhere else.
+    If the rewrite fails or returns something unusable, the previous query is reused. That
+    wastes one attempt rather than crashing the request, and the cap still bounds the loop.
     """
-    raise NotImplementedError
+    try:
+        reply = complete(
+            prompts.reformulation_prompt(
+                state["original_query"],
+                state["current_query"],
+                state.get("missing", ""),
+            ),
+            purpose="reformulate",
+        )
+        rewritten = reply.text.strip().strip('"').splitlines()[0].strip() if reply.text else ""
+    except LLMError:
+        rewritten = ""
+
+    if not rewritten or len(rewritten) < 3:
+        rewritten = state["current_query"]
+
+    return {**state, "current_query": rewritten}
+
+
+def route_after_score(state: AdaptiveState) -> Decision:
+    """Choose the next step: "generate", "retry", or "insufficient_evidence".
+
+    The cap is checked here and nowhere else: once ``attempt`` reaches
+    ``settings.adaptive_max_attempts`` the answer is "insufficient_evidence" regardless of score.
+    """
+    return state.get("decision", "insufficient_evidence")
+
+
+# --------------------------------------------------------------------------- graph
 
 
 def build_adaptive_graph() -> Any:
-    """Compile the LangGraph state machine for adaptive retrieval."""
-    raise NotImplementedError
+    """Compile the LangGraph state machine for adaptive retrieval.
+
+    Falls back to the equivalent hand-rolled loop in ``_run_without_langgraph`` if langgraph is
+    not installed, so the engine stays usable (and testable) without it. The topology is
+    identical; only the executor differs.
+    """
+    from langgraph.graph import END, StateGraph
+
+    graph = StateGraph(AdaptiveState)
+    graph.add_node("retrieve", node_retrieve)
+    graph.add_node("score", node_score)
+    graph.add_node("reformulate", node_reformulate)
+
+    graph.set_entry_point("retrieve")
+    graph.add_edge("retrieve", "score")
+    graph.add_conditional_edges(
+        "score",
+        route_after_score,
+        {"generate": END, "insufficient_evidence": END, "retry": "reformulate"},
+    )
+    graph.add_edge("reformulate", "retrieve")
+    return graph.compile()
 
 
-def run_adaptive_retrieval(query: str, identity: Identity, collection: str) -> RetrievalResult:
+def _run_without_langgraph(state: AdaptiveState) -> AdaptiveState:
+    """Execute the same topology as a plain loop, bounded by the same cap."""
+    max_attempts = get_settings().adaptive_max_attempts
+    while True:
+        state = node_score(node_retrieve(state))
+        if route_after_score(state) != "retry":
+            return state
+        if state["attempt"] >= max_attempts:  # belt and braces; node_score already decided
+            return {**state, "decision": "insufficient_evidence"}
+        state = node_reformulate(state)
+
+
+def run_adaptive_retrieval(
+    query: str,
+    identity: Identity,
+    collection: str,
+    top_k: int | None = None,
+) -> RetrievalResult:
     """Execute the adaptive loop and return the final retrieval result."""
-    raise NotImplementedError
+    started = time.perf_counter()
+    initial: AdaptiveState = {
+        "original_query": query,
+        "current_query": query,
+        "identity": identity,
+        "collection": collection,
+        "top_k": top_k,
+        "attempt": 0,
+        "chunks": [],
+        "applied_filter": {},
+        "evidence_score": 0.0,
+        "missing": "",
+        "queries_tried": [],
+    }
 
+    try:
+        final: AdaptiveState = build_adaptive_graph().invoke(initial)
+    except ImportError:
+        final = _run_without_langgraph(initial)
 
-# TODO:
-#  1. Resolve ADR-004 open questions 3 and 4 (cap of 2 or 3; what reformulation actually does)
-#     before wiring the graph.
-#  2. Implement node_retrieve() delegating to RetrievalEngine.retrieve_fixed -- the loop reuses
-#     the filtered path, it does not open its own search.
-#  3. Implement node_score() and emit log_retrieval_attempt() from it, once per attempt.
-#  4. Implement route_after_score() with the cap checked first, score second.
-#  5. Implement node_reformulate(); whatever it does, the access filter still applies to the
-#     retry, and a widened top_k is still k authorized chunks.
-#  6. Implement build_adaptive_graph() and run_adaptive_retrieval().
-#  7. Test: a query engineered to score below threshold terminates after exactly max_attempts and
-#     returns sufficient=False. Assert the attempt count, not just the outcome.
-#  8. Test: a query that clears the threshold on attempt 1 never invokes node_reformulate.
-#  9. Record attempts on RetrievalResult so the mean-retry-count row in docs/EVALUATION.md can be
-#     computed without parsing logs.
+    return RetrievalResult(
+        query=query,
+        chunks=final.get("chunks", []),
+        evidence_score=final.get("evidence_score", 0.0),
+        attempts=final.get("attempt", 0),
+        sufficient=final.get("decision") == "generate",
+        applied_filter=final.get("applied_filter", {}),
+        latency_seconds=time.perf_counter() - started,
+        collection=collection,
+        missing=final.get("missing", ""),
+        queries_tried=final.get("queries_tried", []),
+    )

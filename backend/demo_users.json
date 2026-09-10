@@ -1,0 +1,38 @@
+[
+  {
+    "user_id": "hr_generalist",
+    "name": "Ayesha Khan",
+    "department": "hr",
+    "access_level": "internal",
+    "role": "HR Generalist",
+    "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
+    "_note": "Sees HR internal/public + org-wide 'all'. Cannot see HR confidential."
+  },
+  {
+    "user_id": "hr_director",
+    "name": "Marta Silva",
+    "department": "hr",
+    "access_level": "confidential",
+    "role": "HR Director",
+    "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
+    "_note": "Same department as hr_generalist, one level up. Demonstrates the LEVEL boundary."
+  },
+  {
+    "user_id": "eng_ic",
+    "name": "Daniel Osei",
+    "department": "engineering",
+    "access_level": "internal",
+    "role": "Software Engineer",
+    "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
+    "_note": "Demonstrates the DEPARTMENT partition against both HR users."
+  },
+  {
+    "user_id": "fin_controller",
+    "name": "Priya Raman",
+    "department": "finance",
+    "access_level": "confidential",
+    "role": "Financial Controller",
+    "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
+    "_note": "Reviews vendor contracts against Finance procurement policy."
+  }
+]

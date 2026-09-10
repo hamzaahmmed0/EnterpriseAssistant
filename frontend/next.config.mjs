@@ -2,14 +2,22 @@
  * Next.js configuration.
  *
  * The browser never talks to the backend, Qdrant, or the LLM directly: every call is made
- * server-side with the caller session. Keep BACKEND_INTERNAL_URL out of NEXT_PUBLIC_*.
+ * server-side with the caller's session. BACKEND_INTERNAL_URL is deliberately NOT exposed here --
+ * putting it in `env` would inline it into client bundles.
  */
 
-// TODO: set reactStrictMode and the server-side env passthrough for BACKEND_INTERNAL_URL.
-// TODO: decide output mode ("standalone" if the Docker image copies a minimal server bundle).
-// TODO: add the file-size limit for contract uploads if a route handler proxies them.
-
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  reactStrictMode: true,
+  // Standalone output keeps the Docker runtime stage small (see frontend/Dockerfile).
+  output: "standalone",
+  experimental: {
+    serverActions: {
+      // Contract uploads travel through a server action, so the action body limit has to clear
+      // CONTRACT_MAX_UPLOAD_MB. Keep these two in step.
+      bodySizeLimit: "12mb",
+    },
+  },
+};
 
 export default nextConfig;

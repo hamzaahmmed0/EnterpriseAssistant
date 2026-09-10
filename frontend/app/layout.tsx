@@ -2,16 +2,49 @@
  * Root layout: shell, navigation between Ask / Check / Documents, and the role indicator.
  *
  * The department and role badge is part of the demo, not decoration: the access-control story is
- * shown by asking the same question as two different users.
+ * shown by asking the same question as two different users and pointing at this badge.
  */
 
+import type { Metadata } from "next";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
-export default function RootLayout({ children }: { children: ReactNode }) {
-  throw new Error("Not implemented");
-}
+import { RoleBadge } from "@/components/RoleBadge";
+import { getSession } from "@/lib/session";
 
-// TODO:
-//  1. Render html/body, global styles, and the nav shell.
-//  2. Read the session server-side and render RoleBadge; redirect to / when there is no session.
-//  3. Add the metadata export (title from NEXT_PUBLIC_APP_NAME).
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: process.env.NEXT_PUBLIC_APP_NAME ?? "Enterprise Knowledge Assistant",
+  description: "Access-controlled document Q&A and contract compliance review.",
+};
+
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const session = await getSession();
+
+  return (
+    <html lang="en">
+      <body>
+        <div className="shell">
+          <header className="topbar">
+            <span className="brand">
+              {process.env.NEXT_PUBLIC_APP_NAME ?? "Enterprise Knowledge Assistant"}
+            </span>
+            {session ? (
+              <>
+                <nav className="nav">
+                  <Link href="/ask">Ask</Link>
+                  <Link href="/check">Check</Link>
+                  <Link href="/documents">Documents</Link>
+                </nav>
+                <div className="spacer" />
+                <RoleBadge identity={session.identity} />
+              </>
+            ) : null}
+          </header>
+          <main>{children}</main>
+        </div>
+      </body>
+    </html>
+  );
+}

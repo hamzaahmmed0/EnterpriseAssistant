@@ -12,7 +12,14 @@ Rules that hold for every number in this document:
    log it in [Label corrections](#label-corrections) below, and re-run **all** configurations.
    A results table may never mix pre- and post-correction runs.
 3. **Every results file records its provenance.** A number without the config that produced it is
-   discarded, not caveated.
+   discarded, not caveated. `eval/common.write_results` refuses to write a file without a complete
+   provenance block, so this is enforced rather than remembered.
+4. **The evidence judge is an LLM (ADR-004), so runs are replayable, not deterministic.**
+   Mitigations: temperature 0, strict JSON output, and a judge cache keyed on
+   `sha256(question + sorted chunk_ids + prompt_version + model)`. Re-running the same
+   configuration over the same frozen set replays the same verdicts from the cache. Deleting the
+   cache, or bumping `JUDGE_PROMPT_VERSION`, invalidates it -- and every result produced with it.
+   The residual non-determinism is a stated limitation, not a solved problem.
 
 ---
 
@@ -105,7 +112,7 @@ a leak that the model happened not to quote is still a leak.
   {
     "contract_id": "ctr-001",
     "file": "data/contracts/ctr-001-vendor-services.docx",
-    "reviewed_as": "legal_reviewer",
+    "reviewed_as": "fin_controller",
     "expected_clause_count": 5,
     "segmentation_path": "structural",
     "clauses": [
@@ -155,12 +162,13 @@ block is invalid.
     "adaptive_max_attempts": null,
     "reranker_model": null
   },
+  "prompt_versions": { "answer": "v1", "judge": "v1", "reformulation": "v1" },
   "dataset": {
     "name": "qa_ground_truth.json",
     "item_count": null,
-    "frozen_commit": ""
+    "frozen_hash": ""
   },
-  "environment": { "host": "", "date": "", "code_commit": "" },
+  "environment": { "host": "", "python": "", "date": "", "code_commit": "", "code_dirty": false },
   "aggregate": { "precision_at_5": null, "recall_at_5": null, "mrr": null, "latency_p50_s": null },
   "per_item": []
 }
@@ -168,10 +176,55 @@ block is invalid.
 
 ---
 
+### 1.5 Running the harnesses
+
+Three commands, run from the repo root with the backend venv active. Each validates its dataset
+before touching a service, so `--dry-run` catches a schema mistake in a second rather than
+halfway through an hour-long run.
+
+```bash
+python -m eval.run_retrieval_eval --config A --dry-run
+```
+
+```bash
+python -m eval.run_retrieval_eval --config A
+```
+
+```bash
+python -m eval.run_retrieval_eval --config C
+```
+
+```bash
+python -m eval.run_access_control_eval --transport both
+```
+
+```bash
+python -m eval.run_contract_eval
+```
+
+`--config` sets `RETRIEVAL_MODE` for the run (A=fixed, B=hybrid_rerank, C=adaptive), so a single
+frozen dataset is measured under each configuration without editing `.env`. Each harness prints
+the Markdown tables for this document and writes a JSON results file to `eval/results/`.
+
+Two harness behaviours worth knowing before a run:
+
+- The retrieval harness issues one warm-up query and discards it, so model load time does not land
+  in the latency numbers.
+- The red-team harness exits non-zero if any item leaks, so it can gate a release. The contract
+  harness refuses to run if no contract in the set exercises the `llm_fallback` path (ADR-009),
+  because an untested fallback would otherwise ship silently.
+
+---
+
 ## 2. Metric definitions
 
-Let *k* = 5 for all reported retrieval metrics, independent of the `top_k` used to build the LLM
-context (see the open question in `docs/DECISIONS.md`). A retrieved chunk is **relevant** if its
+Implemented in `eval/metrics.py` and unit-tested against hand-computed examples in
+`backend/tests/test_eval_metrics.py` -- a wrong metric silently rewrites every conclusion in the
+report, so each one is checked rather than trusted.
+
+Let *k* = 5 (`EVAL_REPORT_K`) for all reported retrieval metrics, independent of
+`RETRIEVAL_TOP_K`, which sizes the LLM context. ADR-012 separates the two deliberately: sweeping
+the context size must not silently redefine `precision@5`. A retrieved chunk is **relevant** if its
 `(document_id, page)` appears in that item's `expected_sources`.
 
 - **Precision@5** — for one question, relevant chunks among the top 5 retrieved, divided by 5.
@@ -198,7 +251,11 @@ context (see the open question in `docs/DECISIONS.md`). A retrieved chunk is **r
   warm model (one discarded warm-up query per run). Reported per stage where available: retrieval,
   scoring, generation.
 - **Retry count** — mean and distribution of adaptive-loop attempts per query (Config C only). The
-  latency cost of the adaptive loop is attributed here.
+  latency cost of the adaptive loop is attributed here. Worst case per query is 3 judge calls +
+  2 rewrite calls + 1 answer call; Config A pays 1 judge + 1 answer.
+- **Evidence score** — the LLM judge's sufficiency score in [0,1] for the retrieved context
+  (ADR-004). Logged per attempt and returned in the API response, so the UI and the harness read
+  the same number.
 - **Access-control pass rate** — passing red-team items / total, reported per transport. The
   headline number is the pair; a single averaged figure hides a one-transport leak.
 - **Clause segmentation accuracy** — predicted clause count vs. `expected_clause_count`, plus the
@@ -377,4 +434,9 @@ To be repeated in the final report, not buried:
 - Answer accuracy and explanation quality are manually graded by a single non-blind grader
   (mitigated by shuffling configs before grading, not eliminated).
 - Local model quality lower-bounds every answer-level metric.
+- The evidence judge is the same 7B model being evaluated, so Config C's retry decisions inherit
+  that model's blind spots. The judge cache makes a re-run replayable but does not make the
+  judgement correct.
+- The judge adds LLM round-trips per query, so Config C's latency is not comparable to Config A's
+  on compute alone. Report both, and report the retry distribution alongside.
 - Clause segmentation quality varies by contract format; the eval set is deliberately conventional.

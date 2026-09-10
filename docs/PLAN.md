@@ -10,6 +10,35 @@ If time slips, cut from Sprints 3 and 4 — never from Sprint 2.
 
 ---
 
+## Implementation status (2026-09-10)
+
+The **code** for all four sprints now exists: ingestion, the permission filter, the adaptive loop,
+generation, contract review, the API, the MCP server, the frontend, and the three eval harnesses.
+132 backend tests pass with no services running, and the frontend builds.
+
+What that does *not* mean: nothing has been **measured**. The sprints below still stand, because
+the deliverable is numbers against a baseline, and every one of them needs data that does not
+exist yet.
+
+| Sprint | Code | Data | Result |
+|---|---|---|---|
+| 1 | done | corpus + Q&A set outstanding (tasks 1.1-1.3) | Config A numbers outstanding |
+| 2 | done | red-team suite outstanding (task 2.4) | threshold sweep + A/C table outstanding |
+| 3 | done | contract eval set outstanding (task 3.9) | demo rehearsal outstanding |
+| 4 | harnesses done | — | every table in docs/EVALUATION.md still empty |
+
+So the ordering has changed but the critical path has not: **authoring and freezing the datasets
+is now the single blocker for everything downstream**. Start with Sprint 1 tasks 1.1-1.3.
+
+Two things to check before trusting an early run:
+
+- `python -m app.ingestion.pipeline --dry-run` parses and chunks without writing, and reports
+  every document it could not handle. Run it before the first real ingest.
+- `EVIDENCE_THRESHOLD=0.6` is a starting point, not a calibrated value. Task 2.9 is still required
+  before any Config C number is reportable.
+
+---
+
 ## Critical path
 
 ```

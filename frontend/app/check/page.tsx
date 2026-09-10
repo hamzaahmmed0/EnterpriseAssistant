@@ -2,13 +2,21 @@
  * Check: upload a contract and read the clause-by-clause compliance report.
  */
 
-export default function CheckPage() {
-  throw new Error("Not implemented");
-}
+import { ContractCheck } from "@/components/ContractCheck";
+import { requireSession } from "@/lib/session";
 
-// TODO:
-//  1. Server-side: read the session, redirect if absent.
-//  2. Render ContractUpload, then ClauseVerdictTable once the review returns.
-//  3. Render the disclaimer from the API response verbatim, above the results, always.
-//  4. Show processing status; review is slow with a local model, so a silent wait reads as a hang.
-//  5. Handle the rejection paths (wrong type, too large) with a clear message.
+export default async function CheckPage() {
+  await requireSession();
+
+  return (
+    <>
+      <h1>Check a contract</h1>
+      <p className="lede">
+        Each clause is compared against the internal policy you are authorised to read. Clauses
+        with no applicable policy are returned as Needs Legal Review rather than assumed
+        compliant.
+      </p>
+      <ContractCheck />
+    </>
+  );
+}

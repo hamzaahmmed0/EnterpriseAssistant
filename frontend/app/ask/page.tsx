@@ -2,14 +2,21 @@
  * Ask: chat over the document corpus, scoped to the signed-in user.
  */
 
-export default function AskPage() {
-  throw new Error("Not implemented");
-}
+import { ChatPanel } from "@/components/ChatPanel";
+import { requireSession } from "@/lib/session";
 
-// TODO:
-//  1. Server-side: read the session, redirect if absent.
-//  2. Render ChatPanel and wire submission to lib/api.ask through a server action.
-//  3. Render the insufficient-evidence answer as a first-class result with its own styling --
-//     it is the honest outcome, not an error toast.
-//  4. Show evidence score and attempt count somewhere visible; the adaptive loop is a
-//     contribution and the demo should make it observable.
+export default async function AskPage() {
+  const { identity } = await requireSession();
+
+  return (
+    <>
+      <h1>Ask</h1>
+      <p className="lede">
+        Answers are drawn only from documents {identity.name} is authorised to read, and every
+        answer is cited. When the evidence is not enough, the assistant says so instead of
+        guessing.
+      </p>
+      <ChatPanel />
+    </>
+  );
+}
