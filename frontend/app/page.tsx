@@ -11,10 +11,10 @@ import { LoginForm } from "@/components/LoginForm";
 import { getSession } from "@/lib/session";
 
 const DEMO_USERS = [
-  { id: "hr_generalist", name: "Ayesha Khan", department: "hr", level: "internal" },
-  { id: "hr_director", name: "Marta Silva", department: "hr", level: "confidential" },
-  { id: "eng_ic", name: "Daniel Osei", department: "engineering", level: "internal" },
-  { id: "fin_controller", name: "Priya Raman", department: "finance", level: "confidential" },
+  { id: "people_member", name: "Ayesha Khan", department: "people", level: "internal" },
+  { id: "people_director", name: "Marta Silva", department: "people", level: "confidential" },
+  { id: "eng_engineer", name: "Daniel Osei", department: "engineering", level: "internal" },
+  { id: "eng_lead", name: "Priya Raman", department: "engineering", level: "confidential" },
 ];
 
 export default async function LoginPage() {

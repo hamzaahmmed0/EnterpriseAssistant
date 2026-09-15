@@ -24,6 +24,39 @@ class EmbeddingError(Exception):
 
 
 def _post_embed(inputs: list[str]) -> list[list[float]]:
+    """Embed a batch through the configured provider (ollama or openai)."""
+    if get_settings().embedding_provider == "openai":
+        return _post_embed_openai(inputs)
+    return _post_embed_ollama(inputs)
+
+
+def _post_embed_openai(inputs: list[str]) -> list[list[float]]:
+    """Call OpenAI's embeddings endpoint. Returns vectors in input order."""
+    settings = get_settings()
+    url = f"{settings.openai_base_url.rstrip('/')}/embeddings"
+    headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
+    try:
+        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
+            response = client.post(
+                url,
+                headers=headers,
+                json={"model": settings.openai_embedding_model, "input": inputs},
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPError as exc:
+        raise EmbeddingError(f"OpenAI embedding request failed: {exc}") from exc
+
+    data = sorted(payload.get("data", []), key=lambda item: item.get("index", 0))
+    vectors = [item.get("embedding") for item in data]
+    if not vectors or len(vectors) != len(inputs) or any(v is None for v in vectors):
+        raise EmbeddingError(
+            f"OpenAI returned {len(vectors)} vectors for {len(inputs)} inputs"
+        )
+    return [[float(value) for value in vector] for vector in vectors]
+
+
+def _post_embed_ollama(inputs: list[str]) -> list[list[float]]:
     """Call Ollama's embedding endpoint, tolerating both API shapes it has shipped."""
     settings = get_settings()
     url = f"{settings.ollama_base_url.rstrip('/')}/api/embed"
@@ -84,10 +117,12 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
 
-    batch_size = max(1, get_settings().embedding_batch_size)
+    settings = get_settings()
+    prefix = "" if settings.embedding_provider == "openai" else DOCUMENT_PREFIX
+    batch_size = max(1, settings.embedding_batch_size)
     vectors: list[list[float]] = []
     for start in range(0, len(texts), batch_size):
-        batch = [DOCUMENT_PREFIX + text for text in texts[start : start + batch_size]]
+        batch = [prefix + text for text in texts[start : start + batch_size]]
         vectors.extend(_post_embed(batch))
     return _check_dimension(vectors)
 
@@ -100,7 +135,8 @@ def embed_query(text: str) -> list[float]:
     """
     if not text or not text.strip():
         raise EmbeddingError("refusing to embed an empty query")
-    return _check_dimension(_post_embed([QUERY_PREFIX + text]))[0]
+    prefix = "" if get_settings().embedding_provider == "openai" else QUERY_PREFIX
+    return _check_dimension(_post_embed([prefix + text]))[0]
 
 
 def embedding_dimension() -> int:
@@ -108,5 +144,6 @@ def embedding_dimension() -> int:
 
     Used at startup to assert the live Qdrant collection agrees with EMBEDDING_DIM.
     """
-    probe = _post_embed([QUERY_PREFIX + "dimension probe"])
+    prefix = "" if get_settings().embedding_provider == "openai" else QUERY_PREFIX
+    probe = _post_embed([prefix + "dimension probe"])
     return len(probe[0])

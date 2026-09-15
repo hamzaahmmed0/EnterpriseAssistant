@@ -175,14 +175,18 @@ def search(
 
     assert_filter_non_empty(qdrant_filter)
 
-    hits = get_client().search(
+    # qdrant-client >=1.14 removed the deprecated `.search()`; `.query_points()` is the current
+    # entry point and its server API exists from Qdrant 1.10 onward. It returns a response object
+    # whose `.points` are the ScoredPoints (same `.payload`/`.score`/`.id` shape as before).
+    response = get_client().query_points(
         collection_name=collection,
-        query_vector=query_vector,
+        query=query_vector,
         query_filter=models.Filter(**qdrant_filter),
         limit=top_k,
         score_threshold=score_floor,
         with_payload=True,
     )
+    hits = getattr(response, "points", response)
 
     chunks = [
         RetrievedChunk(

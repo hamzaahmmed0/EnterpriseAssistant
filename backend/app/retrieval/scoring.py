@@ -86,6 +86,34 @@ def clear_cache() -> None:
         _cache = None
 
 
+def similarity_evidence(question: str, chunks: list[RetrievedChunk]) -> EvidenceJudgement:
+    """Score sufficiency from retrieval similarity instead of an LLM judge.
+
+    ADR-004 prefers an LLM judge, but a small local judge model is non-deterministic and
+    false-rejects clearly relevant evidence, which makes the loop unusable on local hardware.
+    This mode (EVIDENCE_MODE=similarity) uses the retriever's own confidence -- the best chunk's
+    similarity -- as the evidence score. It is deterministic and cheap. The context-only,
+    citation-required generator remains the second gate: if the retrieved chunks do not actually
+    contain the answer, generation still returns the insufficient-evidence response.
+    """
+    if not chunks:
+        return EvidenceJudgement(score=0.0, sufficient=False, missing="no documents were retrieved")
+    top = max(chunk.score for chunk in chunks)
+    threshold = get_settings().evidence_threshold
+    return EvidenceJudgement(
+        score=round(float(top), 4),
+        sufficient=top >= threshold,
+        missing="" if top >= threshold else "no retrieved chunk is similar enough to the question",
+    )
+
+
+def evaluate_evidence(question: str, chunks: list[RetrievedChunk]) -> EvidenceJudgement:
+    """Evidence score for the configured EVIDENCE_MODE ('judge' or 'similarity')."""
+    if get_settings().evidence_mode == "similarity":
+        return similarity_evidence(question, chunks)
+    return judge_evidence(question, chunks)
+
+
 def judge_evidence(question: str, chunks: list[RetrievedChunk]) -> EvidenceJudgement:
     """Ask the model whether these chunks are sufficient to answer the question.
 

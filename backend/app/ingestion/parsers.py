@@ -53,9 +53,11 @@ def parse_document(path: str | Path) -> list[ParsedPage]:
         raw_pages = parse_pdf(resolved)
     elif suffix == ".docx":
         raw_pages = parse_docx(resolved)
+    elif suffix in (".md", ".markdown"):
+        raw_pages = parse_markdown(resolved)
     else:
         raise UnsupportedFormatError(
-            f"unsupported document type {suffix!r}; ingestion handles .pdf and .docx"
+            f"unsupported document type {suffix!r}; ingestion handles .pdf, .docx and .md"
         )
 
     repeated = _repeated_lines(raw_pages)
@@ -113,6 +115,46 @@ def parse_docx(path: str | Path) -> list[ParsedPage]:
         for index, lines in enumerate(pages, start=1)
         if lines
     ]
+
+
+def parse_markdown(path: str | Path) -> list[ParsedPage]:
+    """Extract text from a Markdown file, one ParsedPage per top-level section.
+
+    Markdown has no pagination, so -- like DOCX (ADR-012) -- a stable page mapping is synthesised
+    from structure: each top-level (`#`) or second-level (`##`) heading starts a new page. A file
+    with no such heading yields a single page. Markdown syntax that carries no retrieval meaning
+    (heading hashes, emphasis markers, link URLs, images, code fences) is stripped so the embedded
+    text is prose, not markup.
+    """
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+
+    pages: list[list[str]] = [[]]
+    in_code_fence = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_fence = not in_code_fence
+            continue
+        if not in_code_fence and re.match(r"^#{1,2}\s+\S", line) and pages[-1]:
+            pages.append([])
+        pages[-1].append(line)
+
+    rendered = [ParsedPage(page=index, text=_strip_markdown("\n".join(lines)))
+                for index, lines in enumerate(pages, start=1)]
+    return [page for page in rendered if page.text.strip()]
+
+
+def _strip_markdown(text: str) -> str:
+    """Reduce Markdown to plain prose: drop markup that adds no retrieval signal."""
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)        # images
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)     # links -> link text
+    text = re.sub(r"`{1,3}([^`]*)`{1,3}", r"\1", text)       # inline/code spans
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)  # heading hashes
+    text = re.sub(r"[*_]{1,3}([^*_]+)[*_]{1,3}", r"\1", text)  # bold/italic
+    text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)   # blockquotes
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)  # bullet markers
+    text = re.sub(r"\|", " ", text)                            # table pipes
+    return text
 
 
 def _repeated_lines(pages: list[ParsedPage], threshold: float = 0.6) -> set[str]:

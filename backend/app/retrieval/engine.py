@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.ingestion.embedder import embed_query
 from app.observability import log_retrieval_attempt
 from app.retrieval.access_filter import build_access_filter
-from app.retrieval.scoring import is_sufficient, judge_evidence
+from app.retrieval.scoring import evaluate_evidence, is_sufficient
 from app.retrieval.vector_store import RetrievedChunk, search
 
 
@@ -113,7 +113,7 @@ class RetrievalEngine:
         chunks, applied_filter = self._search(query, identity, top_k)
 
         if judge:
-            judgement = judge_evidence(query, chunks)
+            judgement = evaluate_evidence(query, chunks)
             score, sufficient, missing = (
                 judgement.score,
                 is_sufficient(judgement.score, settings.evidence_threshold),

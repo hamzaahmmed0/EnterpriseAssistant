@@ -1,38 +1,38 @@
 [
   {
-    "user_id": "hr_generalist",
+    "user_id": "people_member",
     "name": "Ayesha Khan",
-    "department": "hr",
+    "department": "people",
     "access_level": "internal",
-    "role": "HR Generalist",
+    "role": "People Team Member",
     "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
-    "_note": "Sees HR internal/public + org-wide 'all'. Cannot see HR confidential."
+    "_note": "Sees People internal + company public. Cannot see People confidential (compensation)."
   },
   {
-    "user_id": "hr_director",
+    "user_id": "people_director",
     "name": "Marta Silva",
-    "department": "hr",
+    "department": "people",
     "access_level": "confidential",
-    "role": "HR Director",
+    "role": "People Director",
     "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
-    "_note": "Same department as hr_generalist, one level up. Demonstrates the LEVEL boundary."
+    "_note": "Same department as people_member, one level up. Demonstrates the LEVEL boundary (compensation)."
   },
   {
-    "user_id": "eng_ic",
+    "user_id": "eng_engineer",
     "name": "Daniel Osei",
     "department": "engineering",
     "access_level": "internal",
     "role": "Software Engineer",
     "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
-    "_note": "Demonstrates the DEPARTMENT partition against both HR users."
+    "_note": "Demonstrates the DEPARTMENT partition: cannot see People or company-internal docs. Engineering confidential (security) is above this user's level."
   },
   {
-    "user_id": "fin_controller",
+    "user_id": "eng_lead",
     "name": "Priya Raman",
-    "department": "finance",
+    "department": "engineering",
     "access_level": "confidential",
-    "role": "Financial Controller",
+    "role": "Engineering Lead",
     "password_sha256": "0ead2060b65992dca4769af601a1b3a35ef38cfad2c2c465bb160ea764157c5d",
-    "_note": "Reviews vendor contracts against Finance procurement policy."
+    "_note": "Engineering at confidential level: sees the security guides eng_engineer cannot. Second LEVEL demo."
   }
 ]

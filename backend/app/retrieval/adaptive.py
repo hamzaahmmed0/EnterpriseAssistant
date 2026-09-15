@@ -23,7 +23,7 @@ from app.generation import prompts
 from app.generation.llm import LLMError, complete
 from app.observability import log_retrieval_attempt
 from app.retrieval.engine import RetrievalEngine, RetrievalResult
-from app.retrieval.scoring import is_sufficient, judge_evidence
+from app.retrieval.scoring import evaluate_evidence, is_sufficient
 from app.retrieval.vector_store import RetrievedChunk
 
 Decision = Literal["generate", "retry", "insufficient_evidence"]
@@ -83,7 +83,7 @@ def node_retrieve(state: AdaptiveState) -> AdaptiveState:
 def node_score(state: AdaptiveState) -> AdaptiveState:
     """Judge the retrieved evidence and record the attempt."""
     settings = get_settings()
-    judgement = judge_evidence(state["original_query"], state.get("chunks", []))
+    judgement = evaluate_evidence(state["original_query"], state.get("chunks", []))
     sufficient = is_sufficient(judgement.score, settings.evidence_threshold)
 
     at_cap = state["attempt"] >= settings.adaptive_max_attempts

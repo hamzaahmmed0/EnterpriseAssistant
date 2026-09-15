@@ -82,12 +82,12 @@ def test_expired_token_is_rejected(hr_identity: Identity) -> None:
 
 def test_demo_login_succeeds_and_wrong_password_fails() -> None:
     """The demo credentials work, and a wrong password does not."""
-    identity = authenticate("hr_generalist", "demo1234")
-    assert identity.department == "hr"
+    identity = authenticate("people_member", "demo1234")
+    assert identity.department == "people"
     assert identity.access_level == "internal"
 
     with pytest.raises(AuthenticationError):
-        authenticate("hr_generalist", "wrong")
+        authenticate("people_member", "wrong")
 
 
 def test_unknown_user_and_wrong_password_report_identically() -> None:
@@ -95,7 +95,7 @@ def test_unknown_user_and_wrong_password_report_identically() -> None:
     with pytest.raises(AuthenticationError) as unknown:
         authenticate("no_such_user", "demo1234")
     with pytest.raises(AuthenticationError) as wrong:
-        authenticate("hr_generalist", "nope")
+        authenticate("people_member", "nope")
     assert str(unknown.value) == str(wrong.value)
 
 

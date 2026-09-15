@@ -47,3 +47,6 @@ Thumbs.db
 # --- generated / local tooling ---
 next-env.d.ts
 .pytest_judge_cache.json
+
+# Qdrant storage when launched from the project root (use QDRANT__STORAGE__STORAGE_PATH instead)
+/storage/

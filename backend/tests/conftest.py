@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -171,10 +172,15 @@ class FakeQdrantClient:
         self.hits = hits or []
         self.calls: list[dict] = []
 
-    def search(self, **kwargs: object) -> list:
-        """Record the call and return the canned hits."""
+    def query_points(self, **kwargs: object):  # noqa: ANN201
+        """Record the call and return the canned hits under a `.points` response shape.
+
+        Mirrors qdrant-client >=1.14, whose `query_points()` returns a response object rather
+        than a bare list. The recorded kwargs still carry `query_filter`, so `last_filter` (and
+        the access-filter regression test) are unaffected by the API rename.
+        """
         self.calls.append(kwargs)
-        return self.hits
+        return SimpleNamespace(points=self.hits)
 
     @property
     def last_filter(self) -> object:

@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 RetrievalMode = Literal["fixed", "hybrid_rerank", "adaptive"]
@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     qdrant_documents_collection: str = "documents_collection"
     qdrant_policy_collection: str = "policy_collection"
 
+    # ---------------------------------------------------------------- providers
+    # ADR-005 keeps local (ollama) as the stack the eval numbers are measured on. `openai` is
+    # the deployment provider; switching changes embedding_dim (re-ingest) and every result table,
+    # so the provider is recorded in the eval provenance block alongside the model names.
+    llm_provider: Literal["ollama", "openai"] = "ollama"
+    embedding_provider: Literal["ollama", "openai"] = "ollama"
+
     # ---------------------------------------------------------------- embeddings (ADR-005)
     embedding_model: str = "nomic-embed-text"
     embedding_dim: int = 768
@@ -64,6 +71,12 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 1024
     llm_timeout_seconds: int = 180
 
+    # ---------------------------------------------------------------- openai (deployment)
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_llm_model: str = "gpt-4o-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+
     # ---------------------------------------------------------------- ingestion (ADR-003)
     chunk_size_tokens: int = 512
     chunk_overlap_tokens: int = 64
@@ -75,6 +88,7 @@ class Settings(BaseSettings):
     eval_report_k: int = 5
     retrieval_score_floor: float | None = None
     evidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    evidence_mode: Literal["judge", "similarity"] = "judge"
     adaptive_max_attempts: int = 3
     retrieval_mode: RetrievalMode = "adaptive"
     reranker_model: str | None = None
@@ -115,6 +129,25 @@ class Settings(BaseSettings):
         return f"http://{self.qdrant_host}:{self.qdrant_port}"
 
     # ---------------------------------------------------------------- validation
+    @field_validator(
+        "retrieval_score_floor",
+        "reranker_model",
+        "qdrant_api_key",
+        "openai_api_key",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        """Treat a blank `.env` entry (`KEY=`) as unset rather than as an empty string.
+
+        `.env.example` ships these three keys with empty values, which dotenv delivers as `""`.
+        Without this, `RETRIEVAL_SCORE_FLOOR=` fails float parsing and the app cannot start from
+        the documented template.
+        """
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
     def _check_invariants(self) -> Settings:
         """Reject configurations that would silently produce meaningless results."""
@@ -134,7 +167,26 @@ class Settings(BaseSettings):
             raise ValueError("retrieval_top_k must be >= 1")
         if self.embedding_dim < 1:
             raise ValueError("embedding_dim must be >= 1")
+        if "openai" in (self.llm_provider, self.embedding_provider) and not self.openai_api_key:
+            raise ValueError(
+                "OPENAI_API_KEY must be set when LLM_PROVIDER or EMBEDDING_PROVIDER is 'openai'"
+            )
         return self
+
+    # ---------------------------------------------------------------- active model selection
+    @property
+    def active_llm_model(self) -> str:
+        """The LLM model name for the configured provider (used in calls and provenance)."""
+        return self.openai_llm_model if self.llm_provider == "openai" else self.llm_model
+
+    @property
+    def active_embedding_model(self) -> str:
+        """The embedding model name for the configured provider."""
+        return (
+            self.openai_embedding_model
+            if self.embedding_provider == "openai"
+            else self.embedding_model
+        )
 
     # ---------------------------------------------------------------- provenance
     def provenance(self) -> dict[str, object]:
@@ -146,9 +198,11 @@ class Settings(BaseSettings):
         """
         return {
             "retrieval_mode": self.retrieval_mode,
-            "llm_model": self.llm_model,
+            "llm_provider": self.llm_provider,
+            "embedding_provider": self.embedding_provider,
+            "llm_model": self.active_llm_model,
             "llm_temperature": self.llm_temperature,
-            "embedding_model": self.embedding_model,
+            "embedding_model": self.active_embedding_model,
             "embedding_dim": self.embedding_dim,
             "chunk_size_tokens": self.chunk_size_tokens,
             "chunk_overlap_tokens": self.chunk_overlap_tokens,
@@ -156,6 +210,7 @@ class Settings(BaseSettings):
             "eval_report_k": self.eval_report_k,
             "retrieval_score_floor": self.retrieval_score_floor,
             "evidence_threshold": self.evidence_threshold,
+            "evidence_mode": self.evidence_mode,
             "adaptive_max_attempts": self.adaptive_max_attempts,
             "reranker_model": self.reranker_model,
             "contract_top_k": self.contract_top_k,

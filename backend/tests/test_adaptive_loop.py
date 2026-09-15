@@ -42,7 +42,7 @@ def wire(monkeypatch: pytest.MonkeyPatch, make_chunk):  # noqa: ANN201 - harness
 
         monkeypatch.setattr(engine_module, "search", fake_search)
         monkeypatch.setattr(engine_module, "embed_query", lambda text: [0.0] * 8)
-        monkeypatch.setattr(adaptive_module, "judge_evidence", fake_judge)
+        monkeypatch.setattr(adaptive_module, "evaluate_evidence", fake_judge)
         monkeypatch.setattr(adaptive_module, "node_reformulate", fake_reformulate)
         # Force the hand-rolled executor so the test does not depend on langgraph being installed.
         monkeypatch.setattr(
